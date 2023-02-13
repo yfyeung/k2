@@ -534,7 +534,7 @@ FsaVec CtcGraphs(const Ragged<int32_t> &symbols, bool modified = false,
                  Array1<int32_t> *aux_labels = nullptr);
 
 FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified = false,
-                 Array1<int32_t> *aux_labels = nullptr, int max_repeat);
+                 Array1<int32_t> *aux_labels = nullptr, int max_repeat = 1);
 
 /*
   Create an FasVec containing levenshtein graph FSAs, given a list of sequences

@@ -575,9 +575,10 @@ FsaVec LevenshteinGraphs(const Ragged<int32_t> &symbols,
 }
 
 FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
-                 Array1<int32_t> *aux_labels /*= nullptr*/) {
+                 Array1<int32_t> *aux_labels /*= nullptr*/, const int max_repeat) {
   NVTX_RANGE(K2_FUNC);
   K2_CHECK_EQ(symbols.NumAxes(), 2);
+  K2_CHECK_EQ(max_repeat, 1);
   ContextPtr &c = symbols.Context();
 
   int32_t num_fsas = symbols.Dim0();
@@ -593,7 +594,10 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
         int32_t symbol_idx0x = symbol_row_split1_data[fsa_idx0],
                 symbol_idx0x_next = symbol_row_split1_data[fsa_idx0 + 1],
                 symbol_num = symbol_idx0x_next - symbol_idx0x;
-        num_states_for_data[fsa_idx0] = symbol_num * 2 + 2;
+        // For each symbo, (1 + 1 + max_repeat)-states
+        // 1 for blank, 1 for its first appear, and max_repeat for its repeation
+        num_states_for_data[fsa_idx0] = symbol_num * (2 + max_repeat) + 2;
+        // num_states_for_data[fsa_idx0] = symbol_num * 2 + 2;
       });
 
   ExclusiveSum(num_states_for, &num_states_for);
@@ -611,38 +615,37 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
   K2_EVAL(
       c, num_states, lambda_set_num_arcs, (int32_t state_idx01)->void {
         int32_t fsa_idx0 = fts_row_ids1_data[state_idx01],
+                // fsa_idx0 * (2 + max_repeat  - 2)
+                added_states = fsa_idx0 *  max_repeat,
                 // we minus fsa_idx0 here, because we are adding one more state,
                 // the final state for each fsa
-                sym_state_idx01 = state_idx01 / 2 - fsa_idx0,
-                remainder = state_idx01 % 2,
+                // sym_state_idx01 = state_idx01 / 2 - fsa_idx0,
+                sym_state_idx01 = (state_idx01 + added_states) / (2 + max_repeat) - fsa_idx0,
+                // remainder = state_idx01 % 2,
+                remainder = (state_idx01 + added_states) % (2 + max_repeat),
+                // remainder = state_idx01 % 2
+
+                // For states 0, (2 + max_repeat), (2 + max_repeat) * 2, ...
                 current_num_arcs = 2;  // normally there are two arcs, self-loop
                                        // and arc pointing to the next state
                                        // blank state always has two arcs
         if (remainder) {  // symbol state
+          // remainder could be 1 2,... (1 + max_repeat)
           int32_t sym_final_state =
                     symbol_row_split1_data[fsa_idx0 + 1];
           // There are no arcs for final states
           if (sym_state_idx01 == sym_final_state) {
             current_num_arcs = 0;
-          } else if (modified) {
-            current_num_arcs = 3;
           } else {
-            int32_t current_symbol = symbol_data[sym_state_idx01],
-                    // we set the next symbol of the last symbol to -1, so
-                    // the following if clause will always be true, which means
-                    // we will have 3 arcs for last symbol state
-                    next_symbol = (sym_state_idx01 + 1) == sym_final_state ?
-                                  -1 : symbol_data[sym_state_idx01 + 1];
-            // symbols must be not equal to -1, which is specially used in k2
-            K2_CHECK_NE(current_symbol, -1);
-            // if current_symbol equals next_symbol, we need a blank state
-            // between them, so there are two arcs for this state
-            // otherwise, this state will point to blank state and next symbol
-            // state, so we need three arcs here.
-            // Note: for the simplified topology (standard equals false), there
-            // are always 3 arcs leaving symbol states.
-            if (current_symbol != next_symbol)
-              current_num_arcs = 3;
+            if (1 == remainder) {
+
+                // state 1, (2 + max_repeat) * 1 + 1, (2 + max_repeat) * 2 + 1
+                current_num_arcs = 3;
+            } else if(max_repeat + 1 == remainder) {
+                current_num_arcs = 2;
+            } else {
+                current_num_arcs = 3;
+            }
           }
         }
         num_arcs_for_data[state_idx01] = current_num_arcs;
@@ -676,8 +679,11 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
                 state_idx1 = state_idx01 - state_idx0x,
                 arc_idx01x = ctc_row_splits2_data[state_idx01],
                 arc_idx2 = arc_idx012 - arc_idx01x,
-                sym_state_idx01 = state_idx01 / 2 - fsa_idx0,
-                remainder = state_idx01 % 2,
+                // fsa_idx0 * (2 + max_repeat  - 2)
+                added_states = fsa_idx0 *  max_repeat,
+                sym_state_idx01 = (state_idx01 + added_states) / (2 + max_repeat) - fsa_idx0,
+
+                remainder = (state_idx01 + added_states) % (2 + max_repeat),
                 sym_final_state = symbol_row_split1_data[fsa_idx0 + 1];
         bool final_state = sym_final_state == sym_state_idx01;
         int32_t current_symbol = final_state ?
@@ -692,36 +698,85 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
               -1 : symbol_data[sym_state_idx01 + 1];
           // for standard topology, the symbol state can not point to next
           // symbol state if the next symbol is identical to current symbol.
-          if (current_symbol == next_symbol && !modified) {
-            K2_CHECK_LT(arc_idx2, 2);
-            arc.label = arc_idx2 == 0 ? 0 : current_symbol;
-            arc.dest_state = arc_idx2 == 0 ? state_idx1 + 1 : state_idx1;
-          } else {
-            switch (arc_idx2) {
-              case 0:   // the arc pointing to blank state
-                arc.label = 0;
-                arc.dest_state = state_idx1 + 1;
-                break;
-              case 1:   // the self loop arc
-                arc.label = current_symbol;
-                arc.dest_state = state_idx1;
-                break;
-              case 2:  // the arc pointing to the next symbol state
-                arc.label = next_symbol;
-                aux_labels_value = sym_state_idx01 + 1 == sym_final_state ?
-                    -1 : next_symbol;
-                arc.dest_state = state_idx1 + 2;
-                break;
-              default:
-                K2_LOG(FATAL) << "Arc index must be less than 3";
+          // if (current_symbol == next_symbol && !modified) {
+          //   K2_CHECK_LT(arc_idx2, 2);
+          //   arc.label = arc_idx2 == 0 ? 0 : current_symbol;
+          //   arc.dest_state = arc_idx2 == 0 ? state_idx1 + 1 : state_idx1;
+          // } else {
+          if (true) {
+            if ( 1 == remainder ) {
+              switch (arc_idx2) {
+                case 0:
+                  arc.label = current_symbol;
+                  arc.dest_state = arc.src_state + 1;
+                  break;
+                case 1:
+                  arc.label = 0;
+                  arc.dest_state = arc.src_state + max_repeat + 1;
+                  break;
+                case 2:
+                  arc.label = next_symbol;
+                  arc.dest_state = arc.src_state + max_repeat + 2;
+                  if (!final_state) {
+                    aux_labels_value = next_symbol;
+                  }
+                  break;
+              }
+            } else if (2 == remainder) {
+              switch (arc_idx2) {
+                case 0:
+                  arc.label = 0;
+                  arc.dest_state = arc.src_state + 1;
+                  break;
+                case 1:
+                  arc.label = next_symbol;
+                  arc.dest_state = arc.src_state + max_repeat + 1;
+                  if (!final_state) {
+                    aux_labels_value = next_symbol;
+                  }
+                  break;
+              }
+
             }
+            // switch (arc_idx2) {
+            //   case 0:   // the arc pointing to blank state
+            //     arc.label = 0;
+            //     arc.dest_state = state_idx1 + 1;
+            //     break;
+            //   case 1:   // the self loop arc
+            //     arc.label = current_symbol;
+            //     arc.dest_state = state_idx1;
+            //     break;
+            //   case 2:  // the arc pointing to the next symbol state
+            //     arc.label = next_symbol;
+            //     aux_labels_value = sym_state_idx01 + 1 == sym_final_state ?
+            //         -1 : next_symbol;
+            //     arc.dest_state = state_idx1 + 2;
+            //     break;
+            //   default:
+            //     K2_LOG(FATAL) << "Arc index must be less than 3";
+            // }
           }
         } else {
           K2_CHECK_LT(arc_idx2, 2);
-          arc.label = arc_idx2 == 0 ? 0 : current_symbol;
-          arc.dest_state = arc_idx2 == 0 ? state_idx1 : state_idx1 + 1;
-          aux_labels_value = arc_idx2 == 0 ? 0 : current_symbol;
-          if (final_state && arc_idx2 != 0) aux_labels_value = -1;
+          switch(arc_idx2) {
+            case 0:
+              arc.label = 0;
+              arc.dest_state = arc.src_state;
+              // aux_labels_value = arc_idx2 == 0 ? 0 : current_symbol;
+              break;
+            case 1:
+              arc.label = current_symbol;
+              arc.dest_state = state_idx1 + 1;
+              if (!final_state) {
+                aux_labels_value = current_symbol;
+              }
+              break;
+          }
+          // arc.label = arc_idx2 == 0 ? 0 : current_symbol;
+          // arc.dest_state = arc_idx2 == 0 ? state_idx1 : state_idx1 + 1;
+          // aux_labels_value = arc_idx2 == 0 ? 0 : current_symbol;
+          // if (final_state && arc_idx2 != 0) aux_labels_value = -1;
         }
         arcs_data[arc_idx012] = arc;
         if (aux_labels) aux_labels_data[arc_idx012] = aux_labels_value;

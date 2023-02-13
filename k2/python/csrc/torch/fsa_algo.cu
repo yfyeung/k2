@@ -708,7 +708,7 @@ static void PybindFastCtcGraph(py::module &m) {
         torch::Tensor tensor = ToTorch(aux_labels);
         return std::make_pair(graph, tensor);
       },
-      py::arg("symbols"), py::arg("modified") = false);
+      py::arg("symbols"), py::arg("modified") = false, py::arg("max_repeat") = 1);
 }
 
 static void PybindCtcTopo(py::module &m) {
