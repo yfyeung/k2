@@ -533,6 +533,9 @@ FsaVec LinearFsas(const Ragged<int32_t> &symbols);
 FsaVec CtcGraphs(const Ragged<int32_t> &symbols, bool modified = false,
                  Array1<int32_t> *aux_labels = nullptr);
 
+FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified = false,
+                 Array1<int32_t> *aux_labels = nullptr, int max_repeat);
+
 /*
   Create an FasVec containing levenshtein graph FSAs, given a list of sequences
   of symbols. See https://github.com/k2-fsa/k2/pull/828 for more details about

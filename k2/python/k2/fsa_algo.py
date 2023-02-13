@@ -1248,6 +1248,16 @@ def ctc_graph(symbols: Union[List[List[int]], k2.RaggedTensor],
     fsa = Fsa(ragged_arc, aux_labels=aux_labels)
     return fsa
 
+def fast_ctc_graph(symbols: Union[List[List[int]], k2.RaggedTensor],
+              modified: bool = False,
+              max_repeat: int = 1,
+              device: Optional[Union[torch.device, str]] = "cpu") -> Fsa:
+    if not isinstance(symbols, k2.RaggedTensor):
+        symbols = k2.RaggedTensor(symbols, device=device)
+
+    ragged_arc, aux_labels = _k2.fast_ctc_graph(symbols, modified, max_repeat)
+    fsa = Fsa(ragged_arc, aux_labels=aux_labels)
+    return fsa
 
 def ctc_topo(max_token: int,
              modified: bool = False,

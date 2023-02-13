@@ -695,6 +695,22 @@ static void PybindCtcGraph(py::module &m) {
       py::arg("symbols"), py::arg("modified") = false);
 }
 
+static void PybindFastCtcGraph(py::module &m) {
+  m.def(
+      "fast_ctc_graph",
+      [](RaggedAny &symbols,
+         bool modified = false,
+         int max_repeat = 1) -> std::pair<FsaVec, torch::Tensor> {
+        DeviceGuard guard(symbols.any.Context());
+        Array1<int32_t> aux_labels;
+        FsaVec graph =
+            FastCtcGraphs(symbols.any.Specialize<int32_t>(), modified, &aux_labels, max_repeat);
+        torch::Tensor tensor = ToTorch(aux_labels);
+        return std::make_pair(graph, tensor);
+      },
+      py::arg("symbols"), py::arg("modified") = false);
+}
+
 static void PybindCtcTopo(py::module &m) {
   m.def(
       "ctc_topo",
@@ -819,6 +835,7 @@ void PybindFsaAlgo(py::module &m) {
   k2::PybindDecodeStateInfo(m);
   k2::PybindDeterminize(m);
   k2::PybindExpandArcs(m);
+  k2::PybindFastCtcGraph(m);
   k2::PybindFixFinalLabels(m);
   k2::PybindIntersect(m);
   k2::PybindIntersectDense(m);
