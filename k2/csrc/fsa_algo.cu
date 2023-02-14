@@ -637,6 +637,11 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
           if (sym_state_idx01 == sym_final_state) {
             current_num_arcs = 0;
           } else {
+            bool final_state = sym_final_state == sym_state_idx01;
+            int32_t current_symbol = final_state ?
+                -1 : symbol_data[sym_state_idx01];
+            int32_t next_symbol = (sym_state_idx01 + 1) == sym_final_state ?
+                -1 : symbol_data[sym_state_idx01 + 1];
             if (1 == remainder) {
 
                 // state 1, (2 + max_repeat) * 1 + 1, (2 + max_repeat) * 2 + 1
@@ -645,6 +650,9 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
                 current_num_arcs = 2;
             } else {
                 current_num_arcs = 3;
+            }
+            if (current_symbol == next_symbol && !modified) {
+              current_num_arcs -= 1;
             }
           }
         }
