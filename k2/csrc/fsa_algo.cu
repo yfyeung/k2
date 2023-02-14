@@ -867,13 +867,17 @@ FsaVec FastCtcGraphs_1_Repeat(const Ragged<int32_t> &symbols, bool modified /*= 
                                        // and arc pointing to the next state
                                        // blank state always has two arcs
         if (remainder) {  // symbol state
+          current_num_arcs = 1;
           int32_t sym_final_state =
                     symbol_row_split1_data[fsa_idx0 + 1];
           // There are no arcs for final states
           if (sym_state_idx01 == sym_final_state) {
             current_num_arcs = 0;
           } else if (modified) {
-            current_num_arcs = 3;
+          // remove self loop blank
+            // current_num_arcs = 3;
+            // 0 for pointing to blank state, 1 for next
+            current_num_arcs = 2;
           } else {
             int32_t current_symbol = symbol_data[sym_state_idx01],
                     // we set the next symbol of the last symbol to -1, so
@@ -890,7 +894,7 @@ FsaVec FastCtcGraphs_1_Repeat(const Ragged<int32_t> &symbols, bool modified /*= 
             // Note: for the simplified topology (standard equals false), there
             // are always 3 arcs leaving symbol states.
             if (current_symbol != next_symbol)
-              current_num_arcs = 3;
+              current_num_arcs = 2;
           }
         }
         num_arcs_for_data[state_idx01] = current_num_arcs;
@@ -951,10 +955,10 @@ FsaVec FastCtcGraphs_1_Repeat(const Ragged<int32_t> &symbols, bool modified /*= 
                 arc.dest_state = state_idx1 + 1;
                 break;
               case 1:   // the self loop arc
-                arc.label = current_symbol;
-                arc.dest_state = state_idx1;
-                break;
-              case 2:  // the arc pointing to the next symbol state
+              //   arc.label = current_symbol;
+              //   arc.dest_state = state_idx1;
+              //   break;
+              // case 2:  // the arc pointing to the next symbol state
                 arc.label = next_symbol;
                 aux_labels_value = sym_state_idx01 + 1 == sym_final_state ?
                     -1 : next_symbol;
