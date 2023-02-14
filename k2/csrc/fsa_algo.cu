@@ -578,7 +578,7 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
                  Array1<int32_t> *aux_labels /*= nullptr*/, const int max_repeat) {
   NVTX_RANGE(K2_FUNC);
   K2_CHECK_EQ(symbols.NumAxes(), 2);
-  K2_CHECK_EQ(max_repeat, 1);
+  // K2_CHECK_EQ(max_repeat, 1);
   ContextPtr &c = symbols.Context();
 
   int32_t num_fsas = symbols.Dim0();
@@ -673,15 +673,23 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
 
   K2_EVAL(
       c, num_arcs, lambda_set_arcs, (int32_t arc_idx012)->void {
+      // 17
         int32_t state_idx01 = ctc_row_ids2_data[arc_idx012],
+        // 1
                 fsa_idx0 = ctc_row_ids1_data[state_idx01],
+                // 10
                 state_idx0x = ctc_row_splits1_data[fsa_idx0],
+                // 7
                 state_idx1 = state_idx01 - state_idx0x,
                 arc_idx01x = ctc_row_splits2_data[state_idx01],
                 arc_idx2 = arc_idx012 - arc_idx01x,
                 // fsa_idx0 * (2 + max_repeat  - 2)
+                // 2
                 added_states = fsa_idx0 *  max_repeat,
+                // 3
                 sym_state_idx01 = (state_idx01 + added_states) / (2 + max_repeat) - fsa_idx0,
+                sym_start_state = sym_state_idx01 * (2 + max_repeat),
+                sym_end_state = (sym_state_idx01 + 1 + fsa_idx0) * (2 + max_repeat) - 1 - state_idx0x - max_repeat * fsa_idx0,
 
                 remainder = (state_idx01 + added_states) % (2 + max_repeat),
                 sym_final_state = symbol_row_split1_data[fsa_idx0 + 1];
@@ -722,7 +730,7 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
                   }
                   break;
               }
-            } else if (2 == remainder) {
+            } else if (max_repeat + 1 == remainder) {
               switch (arc_idx2) {
                 case 0:
                   arc.label = 0;
@@ -730,7 +738,28 @@ FsaVec FastCtcGraphs(const Ragged<int32_t> &symbols, bool modified /*= false*/,
                   break;
                 case 1:
                   arc.label = next_symbol;
-                  arc.dest_state = arc.src_state + max_repeat + 1;
+                  arc.dest_state = sym_end_state + 2;
+                  if (!final_state) {
+                    aux_labels_value = next_symbol;
+                  }
+                  break;
+              }
+
+            } else {
+              switch (arc_idx2) {
+                case 0:
+                  arc.label = current_symbol;
+                  arc.dest_state = arc.src_state + 1;
+                  break;
+                case 1:
+                  arc.label = 0;
+                  // blank state
+                  arc.dest_state = sym_end_state + 1;
+                  break;
+                case 2:
+                  arc.label = next_symbol;
+                  // non-blank token state
+                  arc.dest_state = sym_end_state + 2;
                   if (!final_state) {
                     aux_labels_value = next_symbol;
                   }
