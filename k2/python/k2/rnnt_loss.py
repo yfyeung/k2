@@ -1404,7 +1404,7 @@ def get_rnnt_logprobs_smoothed(
         index=symbols.reshape(B, S, 1, 1).expand(B, S, T, 1),
     ).squeeze(
         -1
-    )  # [B][S][T]
+    ) # [B][S][T]
 
     if rnnt_type == "regular":
         px_am = torch.cat(

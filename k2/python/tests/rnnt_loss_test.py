@@ -478,7 +478,7 @@ class TestRnntLoss(unittest.TestCase):
                 am_only_scale=0.333,
                 boundary=None,
             )
-            assert torch.allclose(m, expected.to(device))
+            assert torch.allclose(m, expected.to(device)), torch.max(torch.abs(m - expected.to(device)))
 
     def test_rnnt_loss_pruned(self):
         B = 4
@@ -841,7 +841,7 @@ class TestRnntLoss(unittest.TestCase):
                     blank=termination_symbol,
                     reduction="none",
                 )
-                assert torch.allclose(m, expected.to(device))
+                assert torch.allclose(m, expected.to(device)), (m, expected.to(device), torch.max(torch.abs(m - expected.to(device))))
 
             # should be invariant to adding a constant for any frame.
             lm += torch.randn(B, S + 1, 1, device=device)
